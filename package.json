@@ -1,6 +1,10 @@
 {
   "name": "chronodesk",
   "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev": "concurrently -n SERVER,CLIENT -c bgBlue.bold,bgGreen.bold \"npm:server\" \"npm:client\"",
     "server": "cd server && npm run dev",
@@ -16,7 +20,9 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "husky": "^9.0.11",
-    "lint-staged": "^15.2.2"
+    "lint-staged": "^15.2.2",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.5"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [

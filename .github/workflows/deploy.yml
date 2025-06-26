@@ -8,65 +8,83 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          MYSQL_DATABASE: ${{ vars.DB_DATABASE }}
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
     steps:
+      # Paso 1: Checkout del código
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      # Paso 2: Configurar Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18.x'
 
+      # Paso 3: Instalar dependencias del frontend (React/Vite)
       - name: Install frontend dependencies
-        run: |
-          cd frontend  # Ajusta según tu estructura
-          npm install
-          
+        working-directory: ./frontend
+        run: npm install
+
+      # Paso 4: Build del frontend
       - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
-
-      - name: Install backend dependencies
-        run: |
-          cd backend  # Ajusta según tu estructura
-          npm install
-
-      - name: Set up MySQL
-        uses: actions/setup-mysql@v3
-        with:
-          mysql-version: '8.0'
-          mysql-root-password: 'root'  
-          
-      - name: Run database migrations
-        run: |
-          cd backend
-          npx sequelize-cli db:migrate
+        working-directory: ./frontend
+        run: npm run build
         env:
-          DB_HOST: localhost
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_DATABASE: chrono-desk-test  # Base de datos para CI
+          VITE_API_URL: ${{ vars.BACKEND_URL || 'http://localhost:5001/api/v1' }}
 
-      - name: Run tests
+      # Paso 5: Instalar dependencias del backend (Node.js/Express)
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm install
+
+      # Paso 6: Configurar entorno del backend
+      - name: Setup backend environment
+        working-directory: ./backend
         run: |
-          cd backend
-          npm test
-          cd ../frontend
-          npm test
+          echo "DB_HOST=${{ vars.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ vars.DB_PORT }}" >> .env
+          echo "DB_DATABASE=${{ vars.DB_DATABASE }}" >> .env
+          echo "DB_USERNAME=root" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
 
-      - name: Deploy to Vercel (Frontend)
-        if: github.ref == 'refs/heads/main'
+      # Paso 7: Ejecutar migraciones de la base de datos
+      - name: Run database migrations
+        working-directory: ./backend
+        run: npx sequelize-cli db:migrate
+        env:
+          NODE_ENV: production
+
+      # Paso 8: Iniciar servidor backend (para pruebas)
+      - name: Start backend server
+        working-directory: ./backend
+        run: npm start &
+        env:
+          PORT: ${{ vars.BACKEND_PORT }}
+
+      # Paso 9: Desplegar frontend (ejemplo con Vercel)
+      - name: Deploy frontend to Vercel
         uses: amondnet/vercel-action@v30
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          
-      - name: Deploy to Heroku (Backend)
-        if: github.ref == 'refs/heads/main'
+          working-directory: ./frontend
+
+      # Paso 10: Desplegar backend (ejemplo con Heroku)
+      - name: Deploy backend to Heroku
         uses: akhileshns/heroku-deploy@v3.12.12
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "tu-app-backend"
+          heroku_app_name: "chrono-desk-backend"
           heroku_email: "tu-email@example.com"
+          working-directory: ./backend
