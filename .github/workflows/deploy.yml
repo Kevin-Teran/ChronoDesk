@@ -1,0 +1,72 @@
+name: Deploy Full-Stack App
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend  # Ajusta según tu estructura
+          npm install
+          
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Install backend dependencies
+        run: |
+          cd backend  # Ajusta según tu estructura
+          npm install
+
+      - name: Set up MySQL
+        uses: actions/setup-mysql@v3
+        with:
+          mysql-version: '8.0'
+          mysql-root-password: 'root'  
+          
+      - name: Run database migrations
+        run: |
+          cd backend
+          npx sequelize-cli db:migrate
+        env:
+          DB_HOST: localhost
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_DATABASE: chrono-desk-test  # Base de datos para CI
+
+      - name: Run tests
+        run: |
+          cd backend
+          npm test
+          cd ../frontend
+          npm test
+
+      - name: Deploy to Vercel (Frontend)
+        if: github.ref == 'refs/heads/main'
+        uses: amondnet/vercel-action@v30
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          
+      - name: Deploy to Heroku (Backend)
+        if: github.ref == 'refs/heads/main'
+        uses: akhileshns/heroku-deploy@v3.12.12
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "tu-app-backend"
+          heroku_email: "tu-email@example.com"
