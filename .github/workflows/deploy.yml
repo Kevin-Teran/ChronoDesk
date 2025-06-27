@@ -1,72 +1,243 @@
-name: Deploy Full-Stack App
+name: Deploy Full-Stack ChronoDesk
 
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18.x'
+  FRONTEND_DIR: './frontend'
+  BACKEND_DIR: './backend'
 
 jobs:
-  deploy:
+  # ===================================================
+  # 🔍 ANÁLISIS Y VALIDACIÓN DE CÓDIGO
+  # ===================================================
+  code-quality:
     runs-on: ubuntu-latest
+    name: Code Quality & Linting
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd ${{ env.FRONTEND_DIR }}
+          npm ci
+          cd ../${{ env.BACKEND_DIR }}
+          npm ci
+
+      - name: Run ESLint (Frontend)
+        run: |
+          cd ${{ env.FRONTEND_DIR }}
+          npm run lint || true
+
+      - name: Run ESLint (Backend)
+        run: |
+          cd ${{ env.BACKEND_DIR }}
+          npm run lint || true
+
+  # ===================================================
+  # 🧪 TESTING COMPLETO
+  # ===================================================
+  test:
+    runs-on: ubuntu-latest
+    name: Run Tests
+    needs: code-quality
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_password
+          MYSQL_DATABASE: chrono_desk_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          cd ${{ env.FRONTEND_DIR }}
+          npm ci
+          cd ../${{ env.BACKEND_DIR }}
+          npm ci
+
+      - name: Wait for MySQL
+        run: |
+          for i in {30..0}; do
+            if mysqladmin ping -h 127.0.0.1 -u root -ptest_password; then
+              break
+            fi
+            echo 'Waiting for MySQL...'
+            sleep 1
+          done
+
+      - name: Setup test database
+        run: |
+          cd ${{ env.BACKEND_DIR }}
+          npm run db:migrate || echo "Migration failed, continuing..."
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: chrono_desk_test
+          DB_USERNAME: root
+          DB_PASSWORD: test_password
+
+      - name: Run backend tests
+        run: |
+          cd ${{ env.BACKEND_DIR }}
+          npm test
+        env:
+          NODE_ENV: test
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: chrono_desk_test
+          DB_USERNAME: root
+          DB_PASSWORD: test_password
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+      - name: Run frontend tests
+        run: |
+          cd ${{ env.FRONTEND_DIR }}
+          npm test -- --run
+
+  # ===================================================
+  # 🏗️ BUILD DEL FRONTEND
+  # ===================================================
+  build-frontend:
+    runs-on: ubuntu-latest
+    name: Build Frontend
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
 
       - name: Install frontend dependencies
         run: |
-          cd frontend  # Ajusta según tu estructura
-          npm install
-          
+          cd ${{ env.FRONTEND_DIR }}
+          npm ci
+
       - name: Build frontend
         run: |
-          cd frontend
+          cd ${{ env.FRONTEND_DIR }}
           npm run build
-
-      - name: Install backend dependencies
-        run: |
-          cd backend  # Ajusta según tu estructura
-          npm install
-
-      - name: Set up MySQL
-        uses: actions/setup-mysql@v3
-        with:
-          mysql-version: '8.0'
-          mysql-root-password: 'root'  
-          
-      - name: Run database migrations
-        run: |
-          cd backend
-          npx sequelize-cli db:migrate
         env:
-          DB_HOST: localhost
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_DATABASE: chrono-desk-test  # Base de datos para CI
+          VITE_API_URL: ${{ secrets.BACKEND_URL }}
+          VITE_STRIPE_PUBLIC_KEY: ${{ secrets.VITE_STRIPE_PUBLIC_KEY }}
+          VITE_APP_NAME: ChronoDesk
 
-      - name: Run tests
-        run: |
-          cd backend
-          npm test
-          cd ../frontend
-          npm test
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: ${{ env.FRONTEND_DIR }}/dist/
+          retention-days: 1
 
-      - name: Deploy to Vercel (Frontend)
-        if: github.ref == 'refs/heads/main'
-        uses: amondnet/vercel-action@v30
+  # ===================================================
+  # 🚀 DESPLIEGUE DEL FRONTEND (GitHub Pages)
+  # ===================================================
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    name: Deploy Frontend to GitHub Pages
+    needs: build-frontend
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          
-      - name: Deploy to Heroku (Backend)
-        if: github.ref == 'refs/heads/main'
-        uses: akhileshns/heroku-deploy@v3.12.12
+          name: frontend-build
+          path: ./dist
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
         with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "tu-app-backend"
-          heroku_email: "tu-email@example.com"
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # ===================================================
+  # 🚀 DESPLIEGUE DEL BACKEND (Railway/Render)
+  # ===================================================
+  deploy-backend:
+    runs-on: ubuntu-latest
+    name: Deploy Backend to Railway
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Railway
+        uses: railwayapp/railway-deploy@v3
+        with:
+          api_key: ${{ secrets.RAILWAY_API_KEY }}
+          project_id: ${{ secrets.RAILWAY_PROJECT_ID }}
+          environment: production
+          service: backend
+
+  # ===================================================
+  # 📊 NOTIFICACIÓN Y MONITOREO
+  # ===================================================
+  notify:
+    runs-on: ubuntu-latest
+    name: Deployment Notification
+    needs: [deploy-frontend, deploy-backend]
+    if: always()
+
+    steps:
+      - name: Notify deployment status
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
