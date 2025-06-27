@@ -9,7 +9,7 @@ import FeaturesSection from "./FeaturesSection";
 import ContactSection from "./ContactSection";
 import TestimonialsSlider from "../../components/layout/TestimonialsSlider";
 import ReviewModal from "../../components/layout/ReviewModal";
-import { getAllReviews } from '../../services/reviewService';
+import { reviewService } from '../../services/reviewService';
 import { useAuth } from "../../context/AuthContext";
 import Navbar from "../../components/layout/Navbar";
 import Footer from "../../components/layout/Footer";
@@ -22,8 +22,8 @@ const Landing = () => {
   useEffect(() => {
     const fetchComments = async () => {
       try {
-        const data = await getAllReviews();
-        setComments(data.slice(0, 3));
+        const data = await reviewService.getAllReviews(3);
+        setComments(data);
       } catch (error) {
         console.error("Error fetching comments:", error);
       }

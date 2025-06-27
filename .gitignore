@@ -1,0 +1,51 @@
+# ========== Node.js / React ========== #
+# Dependencias
+node_modules/
+.pnp/
+.pnp.js
+
+# Entornos y builds
+dist/
+build/
+.next/
+out/
+
+# Cache y logs
+.npm/
+.yarn/
+.yarn-cache/
+*.log
+logs/
+
+# Variables de entorno
+.env*
+!.env.example
+
+# Configuraciones de IDE / Editor
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# ========== Figura ========== #
+/avatar_images/
+/backgrounds/
+/capes/
+/renders/
+/screenshots/
+/blockbench/
+/cache/
+/temp/
+/config.json
+/options.txt
+*.bak
+*.tmp
+*~
+.DS_Store

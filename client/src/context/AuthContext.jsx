@@ -17,11 +17,6 @@ export const AuthProvider = ({ children }) => {
       try {
         const storedToken = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
-        
-        console.log('Inicializando autenticación:', {
-          hasStoredToken: !!storedToken,
-          hasStoredUser: !!storedUser
-        });
 
         if (storedToken) {
           try {

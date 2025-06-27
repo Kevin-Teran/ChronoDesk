@@ -46,12 +46,6 @@ const LoginForm = () => {
 
   // Redireccionar si ya está autenticado
   useEffect(() => {
-    console.log('LoginForm useEffect - Estado auth:', {
-      isAuthenticated,
-      user: user ? { id: user.id, role: user.role } : null,
-      authLoading
-    });
-
     // Solo redirigir si no está cargando y está autenticado
     if (!authLoading && isAuthenticated && user) {
       const redirectTo = getRedirectPath();
